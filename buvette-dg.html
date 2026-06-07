@@ -211,8 +211,22 @@ header{
     </div>
     <button class="btn-gold" onclick="login()">Accéder au tableau de bord</button>
     <div class="err-msg" id="loginErr">Mot de passe incorrect.</div>
-    <div style="margin-top:20px;text-align:center;font-size:11px;color:var(--muted)">
-      Première connexion ? Mot de passe par défaut : <strong style="color:var(--gold)">dg2024</strong>
+    <div style="margin-top:16px">
+      <button onclick="resetAcces()" style="width:100%;background:rgba(239,68,68,.15);border:1px solid rgba(239,68,68,.4);color:#fca5a5;border-radius:10px;padding:12px;font-size:13px;font-weight:700;cursor:pointer;font-family:'DM Sans',sans-serif">
+        🔓 Désactiver le mot de passe et entrer
+      </button>
+    </div>
+    <div style="margin-top:10px;text-align:center">
+      <button onclick="ouvrirRecuperation()" style="background:none;border:none;color:var(--muted2);font-size:12px;cursor:pointer;text-decoration:underline;font-family:'DM Sans',sans-serif">Mot de passe oublié ?</button>
+    </div>
+    <!-- RECUPERATION -->
+    <div id="recuperationZone" style="display:none;margin-top:16px;border-top:1px solid var(--border2);padding-top:16px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin-bottom:6px">Code de secours</div>
+      <input type="text" id="inputSecours" placeholder="Entrez votre code de secours"
+        style="width:100%;background:var(--card);border:1px solid var(--border2);color:var(--text);-webkit-text-fill-color:var(--text);border-radius:10px;padding:11px 14px;font-size:14px;outline:none;margin-bottom:8px"
+        onkeydown="if(event.key==='Enter')validerRecuperation()">
+      <button onclick="validerRecuperation()" style="width:100%;background:var(--gold);color:#0a0c10;border:none;border-radius:10px;padding:12px;font-size:14px;font-weight:700;cursor:pointer">Récupérer l'accès</button>
+      <div id="secoursErr" style="display:none;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:8px;padding:9px 12px;font-size:13px;margin-top:8px">Code incorrect.</div>
     </div>
   </div>
 </div>
@@ -226,7 +240,7 @@ header{
     </div>
     <div style="display:flex;gap:8px;align-items:center">
       <button class="btn-save" id="btnSave" onclick="sauvegarderRapport()" style="display:none">💾 Sauvegarder</button>
-      <button class="btn-logout" onclick="logout()">⎋ Déconnexion</button>
+      <button class="btn-logout" style="border-color:var(--border2)" onclick="ouvrirChangePwd()">🔑</button>
     </div>
   </header>
 
@@ -260,6 +274,24 @@ const DG_PWD_KEY = 'buvette_dg_pwd';
 const DG_SESSIONS_KEY = 'buvette_dg_sessions';
 const DEFAULT_PWD = 'dg2024';
 
+// Stockage robuste : essaie localStorage, fallback sessionStorage, fallback mémoire
+const _store = {};
+function storeSet(key, val){
+  try { localStorage.setItem(key, val); return; } catch(e){}
+  try { sessionStorage.setItem(key, val); return; } catch(e){}
+  _store[key] = val;
+}
+function storeGet(key){
+  try { const v = localStorage.getItem(key); if(v!==null) return v; } catch(e){}
+  try { const v = sessionStorage.getItem(key); if(v!==null) return v; } catch(e){}
+  return _store[key]||null;
+}
+function storeDel(key){
+  try { localStorage.removeItem(key); } catch(e){}
+  try { sessionStorage.removeItem(key); } catch(e){}
+  delete _store[key];
+}
+
 // ─── UTILS ───
 let toastTmr;
 function toast(msg,type='ok'){
@@ -277,30 +309,32 @@ function fmtDate(d){
 const fcfa = v => new Intl.NumberFormat('fr-FR').format(Math.round(v))+' FCFA';
 
 // ─── AUTH ───
-function getPwd(){ return localStorage.getItem(DG_PWD_KEY)||DEFAULT_PWD; }
-function login(){
-  const pwd = document.getElementById('loginPwd').value;
-  if(pwd === getPwd()){
-    document.getElementById('loginScreen').style.display='none';
-    document.getElementById('dashboard').style.display='flex';
-    document.getElementById('loginErr').style.display='none';
-    renderSessions();
-  } else {
-    document.getElementById('loginErr').style.display='block';
-    document.getElementById('loginPwd').value='';
+function getPwd(){ return storeGet(DG_PWD_KEY)||''; }
+function pwdActif(){ return !!storeGet(DG_PWD_KEY); }
+
+// Au chargement : accès direct si pas de mot de passe
+document.addEventListener('DOMContentLoaded', function(){
+  if(!pwdActif()){ accederSansMotDePasse(); }
+});
+// Double sécurité pour Android (content://)
+setTimeout(function(){
+  if(!pwdActif() && document.getElementById('loginScreen').style.display !== 'none'){
+    accederSansMotDePasse();
   }
-}
+}, 300);
+function login(){ renderSessions(); }
+function resetAcces(){ storeDel(DG_PWD_KEY); }
+function accederSansMotDePasse(){ renderSessions(); }
 function logout(){
-  document.getElementById('loginScreen').style.display='flex';
-  document.getElementById('dashboard').style.display='none';
-  document.getElementById('loginPwd').value='';
   document.getElementById('rapportView').style.display='none';
   document.getElementById('rapportView').innerHTML='';
+  rapportActif = null;
+  if(document.getElementById('btnSave')) document.getElementById('btnSave').style.display='none';
 }
 
 // ─── SESSIONS ───
-function getSessions(){ try{ return JSON.parse(localStorage.getItem(DG_SESSIONS_KEY)||'[]'); } catch(e){ return []; } }
-function saveSessions(s){ localStorage.setItem(DG_SESSIONS_KEY, JSON.stringify(s)); }
+function getSessions(){ try{ return JSON.parse(storeGet(DG_SESSIONS_KEY)||'[]'); } catch(e){ return []; } }
+function saveSessions(s){ storeSet(DG_SESSIONS_KEY, JSON.stringify(s)); }
 
 function renderSessions(){
   const sessions = getSessions();
@@ -593,6 +627,82 @@ function sauvegarderRapport(){
 
 
 
+
+// ─── CHANGEMENT MOT DE PASSE ───
+function ouvrirChangePwd(){
+  document.getElementById('pwdModal').style.display='flex';
+  document.getElementById('pwdActuel').value='';
+  document.getElementById('pwdNouveau').value='';
+  document.getElementById('pwdConfirm').value='';
+  document.getElementById('pwdErr').style.display='none';
+  document.getElementById('pwdOk').style.display='none';
+  setTimeout(()=>document.getElementById('pwdActuel').focus(),100);
+}
+function fermerChangePwd(){
+  document.getElementById('pwdModal').style.display='none';
+}
+function validerChangePwd(){
+  const actuel = document.getElementById('pwdActuel').value;
+  const nouveau = document.getElementById('pwdNouveau').value;
+  const confirm = document.getElementById('pwdConfirm').value;
+  const errEl = document.getElementById('pwdErr');
+  const okEl = document.getElementById('pwdOk');
+  errEl.style.display='none'; okEl.style.display='none';
+
+  if(actuel !== getPwd()){ errEl.textContent='Mot de passe actuel incorrect.'; errEl.style.display='block'; return; }
+  if(nouveau.length < 4){ errEl.textContent='Le nouveau mot de passe doit faire au moins 4 caractères.'; errEl.style.display='block'; return; }
+  if(nouveau !== confirm){ errEl.textContent='Les deux mots de passe ne correspondent pas.'; errEl.style.display='block'; return; }
+
+  storeSet(DG_PWD_KEY, nouveau);
+  const secours = document.getElementById('pwdSecours').value.trim();
+  if(secours) storeSet('buvette_dg_secours', secours);
+  okEl.style.display='block';
+  setTimeout(()=>fermerChangePwd(), 1500);
+}
+
+function desactiverMotDePasse(){
+  if(!confirm('Désactiver le mot de passe ? L'appli sera accessible sans code.')) return;
+  storeDel(DG_PWD_KEY);
+  toast('Mot de passe désactivé');
+  fermerChangePwd();
+}
+
 </script>
+
+<!-- MODAL CHANGEMENT MOT DE PASSE -->
+<div id="pwdModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:1000;align-items:center;justify-content:center;padding:20px">
+  <div style="background:#111318;border:1px solid #252d3d;border-radius:16px;padding:28px;max-width:340px;width:100%;position:relative;box-shadow:0 40px 80px rgba(0,0,0,.6)">
+    <div style="font-family:'Playfair Display',serif;font-size:18px;color:#d4a843;margin-bottom:20px;display:flex;justify-content:space-between;align-items:center">
+      🔑 Changer le mot de passe
+      <button onclick="fermerChangePwd()" style="background:none;border:none;color:#6b7594;font-size:18px;cursor:pointer">✕</button>
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#6b7594;margin-bottom:6px">Mot de passe actuel</div>
+      <input type="password" id="pwdActuel" class="field input" placeholder="••••••" onkeydown="if(event.key==='Enter')document.getElementById('pwdNouveau').focus()"
+        style="width:100%;background:#161a22;border:1px solid #252d3d;color:#e8eaf0;-webkit-text-fill-color:#e8eaf0;border-radius:10px;padding:11px 14px;font-size:14px;outline:none">
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#6b7594;margin-bottom:6px">Nouveau mot de passe</div>
+      <input type="password" id="pwdNouveau" placeholder="••••••" onkeydown="if(event.key==='Enter')document.getElementById('pwdConfirm').focus()"
+        style="width:100%;background:#161a22;border:1px solid #252d3d;color:#e8eaf0;-webkit-text-fill-color:#e8eaf0;border-radius:10px;padding:11px 14px;font-size:14px;outline:none">
+    </div>
+    <div style="margin-bottom:12px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#6b7594;margin-bottom:6px">Confirmer le nouveau</div>
+      <input type="password" id="pwdConfirm" placeholder="••••••" onkeydown="if(event.key==='Enter')document.getElementById('pwdSecours').focus()"
+        style="width:100%;background:#161a22;border:1px solid #252d3d;color:#e8eaf0;-webkit-text-fill-color:#e8eaf0;border-radius:10px;padding:11px 14px;font-size:14px;outline:none">
+    </div>
+    <div style="margin-bottom:16px;border-top:1px solid #252d3d;padding-top:12px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#d4a843;margin-bottom:4px">🔐 Code de secours</div>
+      <div style="font-size:11px;color:#6b7594;margin-bottom:8px">Laissez vide pour conserver l'ancien. Ce code vous permettra de récupérer l'accès si vous oubliez votre mot de passe.</div>
+      <input type="text" id="pwdSecours" placeholder="Définir un code de secours…" onkeydown="if(event.key==='Enter')validerChangePwd()"
+        style="width:100%;background:#161a22;border:1px solid #d4a843;color:#e8eaf0;-webkit-text-fill-color:#e8eaf0;border-radius:10px;padding:11px 14px;font-size:14px;outline:none">
+    </div>
+    <div id="pwdErr" style="display:none;background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.3);color:#fca5a5;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px"></div>
+    <div id="pwdOk" style="display:none;background:rgba(34,197,94,.12);border:1px solid rgba(34,197,94,.3);color:#86efac;border-radius:8px;padding:9px 12px;font-size:13px;margin-bottom:12px">✅ Mot de passe modifié !</div>
+    <button onclick="validerChangePwd()" style="width:100%;background:#d4a843;color:#0a0c10;border:none;border-radius:10px;padding:13px;font-size:15px;font-weight:700;cursor:pointer;margin-bottom:8px">Valider</button>
+    <button onclick="desactiverMotDePasse()" style="width:100%;background:none;border:1px solid #ef4444;color:#ef4444;border-radius:10px;padding:10px;font-size:13px;font-weight:600;cursor:pointer">🔓 Désactiver le mot de passe</button>
+  </div>
+</div>
+
 </body>
 </html>
